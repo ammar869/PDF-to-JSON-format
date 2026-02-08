@@ -1,50 +1,51 @@
 from pdf2image import convert_from_path
-from transformers import GLMProcessor, AutoModelForImageTextToText
+from transformers import AutoProcessor, AutoModelForImageTextToText
 import torch
 import json
 
 MODEL_PATH = "zai-org/GLM-OCR"
 
 print("Loading GLM-OCR model...")
-processor = GLMProcessor.from_pretrained(MODEL_PATH)
-
+processor = AutoProcessor.from_pretrained(MODEL_PATH, trust_remote_code=True)
 model = AutoModelForImageTextToText.from_pretrained(
     MODEL_PATH,
     torch_dtype="auto",
-    device_map="auto"
+    device_map="auto",
+    trust_remote_code=True
 )
 
+
 print("Converting PDF to images...")
-pages = convert_from_path("input.pdf", dpi=300)
+pages = convert_from_path("pdfextraction.py", dpi=300)
 
 results = {}
 
 for i, page in enumerate(pages):
+    img_path = f"page_{i}.png"
+    page.save(img_path)
+
     print(f"OCR page {i}")
 
     messages = [
         {
             "role": "user",
             "content": [
-                {"type": "image", "image": page},  # Pass PIL image directly
+                {"type": "image", "url": img_path},
                 {
                     "type": "text",
                     "text": """
 Extract MCQs from this document.
-
 Return STRICT JSON format:
-
 {
- "question_number":{
-   "body":"",
-   "a":"",
-   "b":"",
-   "c":"",
-   "d":"",
-   "correct_option":""
+ "question_number": {
+   "body": "",
+   "a": "",
+   "b": "",
+   "c": "",
+   "d": "",
+   "correct_option": ""
  }
 }
-
 Output ONLY JSON.
 """
                 }
@@ -60,6 +61,7 @@ Output ONLY JSON.
         return_tensors="pt"
     ).to(model.device)
 
+    # Remove token_type_ids if present (some models don't use them)
     inputs.pop("token_type_ids", None)
 
     generated_ids = model.generate(
@@ -75,8 +77,9 @@ Output ONLY JSON.
     try:
         parsed = json.loads(output_text)
         results.update(parsed)
-    except:
-        print("⚠ JSON parsing failed on page", i)
+    except json.JSONDecodeError:
+        print(f"⚠ JSON parsing failed on page {i}")
+        print("Output was:", output_text)
 
 with open("output.json", "w", encoding="utf-8") as f:
     json.dump(results, f, indent=2, ensure_ascii=False)
