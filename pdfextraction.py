@@ -16,7 +16,7 @@ model = AutoModelForImageTextToText.from_pretrained(
 
 
 print("Converting PDF to images...")
-pages = convert_from_path("pdfextraction.py", dpi=300)
+pages = convert_from_path("Integration.pdf", dpi=300)
 
 results = {}
 
