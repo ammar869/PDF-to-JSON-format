@@ -70,6 +70,13 @@ def main():
 
     # 5. Run Inference
     # We use torch.no_grad() to reduce memory usage significantly
+    
+    # Check if processor has chat template, if not, set a default one for GLM-OCR
+    if processor.chat_template is None:
+        print("No chat template found, setting default template for GLM-OCR...")
+        # Default chat template for vision models like GLM-OCR
+        processor.chat_template = """{% for message in messages %}{% if message['role'] == 'user' %}{% if message['content'] is string %}{{ message['content'] }}{% else %}{% for content in message['content'] %}{% if content['type'] == 'image' %}<|image|>{% elif content['type'] == 'text' %}{{ content['text'] }}{% endif %}{% endfor %}{% endif %}{% endif %}{% endfor %}{% if add_generation_prompt %}<|assistant|>\n{% endif %}"""
+    
     with torch.no_grad():
         inputs = processor.apply_chat_template(
             messages,
