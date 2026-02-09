@@ -23,7 +23,8 @@ def main():
     # CRITICAL FIX: trust_remote_code=True must be on BOTH processor and model
     try:
         print("Loading processor...")
-        processor = AutoProcessor.from_pretrained(MODEL_PATH, trust_remote_code=True)
+        # use_fast=False bypasses the buggy video processor auto-detection
+        processor = AutoProcessor.from_pretrained(MODEL_PATH, trust_remote_code=True, use_fast=False)
         print("Processor loaded successfully")
         
         # Check if processor has chat template
