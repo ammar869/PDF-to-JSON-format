@@ -1,5 +1,5 @@
 import torch
-from transformers import AutoProcessor, AutoModelForImageTextToText
+from transformers import AutoProcessor, AutoModelForImageTextToText, AutoImageProcessor, AutoTokenizer
 from pdf2image import convert_from_path
 import os
 
@@ -20,15 +20,19 @@ def main():
     print(f"Loading model on: {device}...")
 
     # 2. Load Processor and Model
-    # CRITICAL FIX: trust_remote_code=True must be on BOTH processor and model
+    # CRITICAL FIX: Use AutoImageProcessor instead of AutoProcessor to avoid video processor bug
     try:
-        print("Loading processor...")
-        # use_fast=False bypasses the buggy video processor auto-detection
-        processor = AutoProcessor.from_pretrained(MODEL_PATH, trust_remote_code=True, use_fast=False)
-        print("Processor loaded successfully")
+        print("Loading image processor...")
+        # Use AutoImageProcessor to bypass the buggy video processor auto-detection
+        image_processor = AutoImageProcessor.from_pretrained(MODEL_PATH, trust_remote_code=True)
+        print("Image processor loaded successfully")
         
-        # Check if processor has chat template
-        print(f"Processor has chat template: {processor.chat_template is not None}")
+        print("Loading tokenizer...")
+        tokenizer = AutoTokenizer.from_pretrained(MODEL_PATH, trust_remote_code=True)
+        print("Tokenizer loaded successfully")
+        
+        # Check if tokenizer has chat template
+        print(f"Tokenizer has chat template: {tokenizer.chat_template is not None}")
         
         print("Loading model...")
         model = AutoModelForImageTextToText.from_pretrained(
@@ -38,6 +42,47 @@ def main():
             trust_remote_code=True
         )
         print("Model loaded successfully")
+        
+        # Create a simple processor wrapper
+        class SimpleProcessor:
+            def __init__(self, image_processor, tokenizer):
+                self.image_processor = image_processor
+                self.tokenizer = tokenizer
+                self.chat_template = tokenizer.chat_template
+            
+            def apply_chat_template(self, messages, **kwargs):
+                # For GLM-OCR, we'll use a simpler approach
+                # Extract the text from the messages
+                text = ""
+                for message in messages:
+                    if message['role'] == 'user':
+                        for content in message['content']:
+                            if content['type'] == 'text':
+                                text += content['text']
+                
+                # Process the image
+                image = None
+                for message in messages:
+                    if message['role'] == 'user':
+                        for content in message['content']:
+                            if content['type'] == 'image':
+                                image = content['image']
+                
+                # Tokenize the text
+                inputs = self.tokenizer(text, return_tensors="pt")
+                
+                # Process the image
+                if image is not None:
+                    image_inputs = self.image_processor(images=image, return_tensors="pt")
+                    inputs.update(image_inputs)
+                
+                return inputs
+            
+            def decode(self, *args, **kwargs):
+                return self.tokenizer.decode(*args, **kwargs)
+        
+        processor = SimpleProcessor(image_processor, tokenizer)
+        print("Processor wrapper created successfully")
     except Exception as e:
         print(f"Error loading model: {e}")
         import traceback
@@ -71,13 +116,6 @@ def main():
 
     # 5. Run Inference
     # We use torch.no_grad() to reduce memory usage significantly
-    
-    # Check if processor has chat template, if not, set a default one for GLM-OCR
-    if processor.chat_template is None:
-        print("No chat template found, setting default template for GLM-OCR...")
-        # Default chat template for vision models like GLM-OCR
-        processor.chat_template = """{% for message in messages %}{% if message['role'] == 'user' %}{% if message['content'] is string %}{{ message['content'] }}{% else %}{% for content in message['content'] %}{% if content['type'] == 'image' %}<|image|>{% elif content['type'] == 'text' %}{{ content['text'] }}{% endif %}{% endfor %}{% endif %}{% endif %}{% endfor %}{% if add_generation_prompt %}<|assistant|>\n{% endif %}"""
-    
     with torch.no_grad():
         inputs = processor.apply_chat_template(
             messages,
