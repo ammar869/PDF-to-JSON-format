@@ -22,15 +22,25 @@ def main():
     # 2. Load Processor and Model
     # CRITICAL FIX: trust_remote_code=True must be on BOTH processor and model
     try:
+        print("Loading processor...")
         processor = AutoProcessor.from_pretrained(MODEL_PATH, trust_remote_code=True)
+        print("Processor loaded successfully")
+        
+        # Check if processor has chat template
+        print(f"Processor has chat template: {processor.chat_template is not None}")
+        
+        print("Loading model...")
         model = AutoModelForImageTextToText.from_pretrained(
             MODEL_PATH,
             torch_dtype=torch.float16 if device == "cuda" else torch.float32,
-            device_map=device,
+            device_map=None,  # Fix: Use None instead of device for CPU
             trust_remote_code=True
         )
+        print("Model loaded successfully")
     except Exception as e:
         print(f"Error loading model: {e}")
+        import traceback
+        traceback.print_exc()
         return
 
     # 3. Convert PDF to Image
